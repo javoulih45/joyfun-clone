@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>JoyFun Clone - AI Video Studio</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .credits { background: var(--card); padding: 10px 20px; border-radius: 50px; font-weight: bold; color: #10b981; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .panel { background: var(--card); padding: 20px; border-radius: 12px; }
+        textarea { width: 100%; height: 120px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 8px; padding: 12px; box-sizing: border-box; }
+        .controls { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+        .btn:hover { opacity: 0.9; }
+        .preview { background: #000; height: 300px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .progress-bar { width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>JoyFun <span style="font-weight: 300">AI Video Studio</span></h1>
+            <div class="credits" id="creditCounter">500,000,000 Credits</div>
+        </div>
+        <div class="grid">
+            <div class="panel">
+                <h3>Prompt de Vídeo</h3>
+                <textarea id="prompt" placeholder="Descreva o vídeo que você deseja criar..."></textarea>
+                <div class="controls">
+                    <select id="model" style="flex:1; padding: 10px; border-radius: 8px; background: #0f172a; color: white;">
+                        <option value="stable-video-diffusion">Stable Video Diffusion 14B</option>
+                        <option value="ltx-video">LTX-Video 0.9</option>
+                    </select>
+                    <input type="number" id="duration" value="5" min="2" max="10" style="width: 60px; padding: 10px; border-radius: 8px; background: #0f172a; color: white;">
+                    <button class="btn" onclick="generateVideo()">Gerar</button>
+                </div>
+            </div>
+            <div class="panel">
+                <h3>Preview</h3>
+                <div class="preview" id="previewArea">
+                    <video id="videoPlayer" controls style="width: 100%; height: 100%; object-fit: contain;"></video>
+                    <div id="loadingMsg" style="display:none; text-align: center;">
+                        <p>Renderizando na GPU...</p>
+                        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                        <small id="etaText"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pollingInterval;
+        const API_BASE = window.location.origin;
+
+        async function fetchStatus() {
+            const res = await fetch(`${API_BASE}/api/status`);
+            const data = await res.json();
+            document.getElementById('creditCounter').innerText = `${data.credits.toLocaleString()} Credits`;
+        }
+
+        async function generateVideo() {
+            const prompt = document.getElementById('prompt').value;
+            const model = document.getElementById('model').value;
+            const duration = parseInt(document.getElementById('duration').value);
+            
+            if (!prompt) return alert("Digite um prompt");
+
+            const res = await fetch(`${API_BASE}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, model, duration, seed: Date.now() })
+            });
+            const data = await res.json();
+            
+            if (data.jobId) startPolling(data.jobId);
+            fetchStatus();
+        }
+
+        function startPolling(jobId) {
+            document.getElementById('videoPlayer').style.display = 'none';
+            document.getElementById('loadingMsg').style.display = 'block';
+            
+            clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+                const job = await res.json();
+                
+                document.getElementById('progressFill').style.width = `${job.progress}%`;
+                document.getElementById('etaText').innerText = `ETA: ${job.eta}s`;
+
+                if (job.status === 'completed') {
+                    clearInterval(pollingInterval);
+                    document.getElementById('loadingMsg').style.display = 'none';
+                    const player = document.getElementById('videoPlayer');
+                    player.src = job.url;
+                    player.style.display = 'block';
+                } else if (job.status === 'failed') {
+                    clearInterval(pollingInterval);
+                    alert("Erro na geração: " + job.error);
+                }
+            }, 1000);
+        }
+        fetchStatus();
+    </script>
+</body>
+</html>
